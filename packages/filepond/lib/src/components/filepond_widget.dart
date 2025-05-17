@@ -1,6 +1,4 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
-import 'dart:developer';
-import 'dart:io';
 
 import 'package:filepond/filepond.dart';
 import 'package:filepond/src/components/file_item.dart';
@@ -37,25 +35,8 @@ class _FilepondWidgetState extends State<FilepondWidget> {
             _listKey.currentState!.insertItem(operation.index ?? 0);
             filesList = List.from(controller.files);
 
-            print(operation.type);
-          // TODO: Handle this case.
-          //   throw UnimplementedError();
           case UploadOperationType.uploaded:
-            print(operation.type);
-            print(operation.index);
-          // TODO: Handle this case.
-          //   throw UnimplementedError();
-          // case UploadOperationType.update:
-          //   // TODO: Handle this case.
-          //   throw UnimplementedError();
-          // case UploadOperationType.failed:
-          //   // TODO: Handle this case.
-          //   throw UnimplementedError();
-          // case UploadOperationType.remove:
-          //   // TODO: Handle this case.
-          //   throw UnimplementedError();
           default:
-            print(operation.type);
         }
       });
     });

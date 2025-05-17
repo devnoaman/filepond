@@ -1,7 +1,6 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 
-import 'package:awesome_dio_interceptor/awesome_dio_interceptor.dart';
-import 'package:dio/dio.dart';
+
 import 'package:filepond/src/components/filepond.dart';
 import 'package:filepond/src/controller/filepond_operation.dart';
 import 'package:filepond/src/models/filepond_file.dart';
@@ -35,7 +34,6 @@ class _FileItemState extends State<FileItem> {
           if (operation.file != null && operation.file!.id == file!.id) {
             file = operation.file!;
             setState(() {});
-            print('uploaded file');
           }
         }
       });

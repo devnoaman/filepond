@@ -14,7 +14,7 @@ class MainApp extends StatelessWidget {
       baseUrl: 'http://localhost:3010/upload',
     );
     controller.operationsStream.listen((onData) {
-      print(onData.toString());
+    
     });
     return MaterialApp(
       home: Scaffold(
