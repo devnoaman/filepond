@@ -2,6 +2,8 @@
 
 A Dart package providing file management components for your Flutter applications.
 
+
+inspired by https://github.com/pqina/filepond
 ## Features
 
 - Easy-to-use file picker and uploader components
