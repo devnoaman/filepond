@@ -80,3 +80,11 @@ flutter:
   #
   # For details regarding fonts in packages, see
   # https://flutter.dev/to/font-from-package
+# This package supports all platforms listed below.
+platforms:
+  android:
+  ios:
+  # linux:
+  # macos:
+  # web:
+  # windows:
