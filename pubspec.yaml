@@ -1,0 +1,8 @@
+name: fileponder
+publish_to: none
+environment:
+  sdk: ^3.7.2
+workspace:
+  - packages/filepond
+dev_dependencies:
+  melos: ^6.3.2
