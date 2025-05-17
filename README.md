@@ -12,10 +12,8 @@ A Dart package providing file management components for your Flutter application
 
 Add the following to your `pubspec.yaml`:
 
-```yaml
-dependencies:
-  filepond:
-    path: ../filepond
+```sh
+flutter pub add filepond
 ```
 
 Then run:
