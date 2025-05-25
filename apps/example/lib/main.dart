@@ -10,21 +10,25 @@ class MainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var controller = FilepondController(
-      baseUrl: 'http://localhost:3010/upload',
-    );
-    controller.operationsStream.listen((onData) {
-    
-    });
-    return MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Filepond(
-            // baseUrl: 'http://localhost:3010/upload',
-            controller: controller,
-          ),
-        ),
-      ),
-    );
+    // controller.operationsStream.listen((onData) {});
+    return MaterialApp(home: FilePonderScreen());
+  }
+}
+
+class FilePonderScreen extends StatefulWidget {
+  const FilePonderScreen({super.key});
+
+  @override
+  State<FilePonderScreen> createState() => _FilePonderScreenState();
+}
+
+class _FilePonderScreenState extends State<FilePonderScreen> {
+  var controller = FilepondController(
+    baseUrl: 'http://localhost:3010/upload',
+    pondLocation: 'filepond/a/b/c',
+  );
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(body: Center(child: Filepond(controller: controller)));
   }
 }

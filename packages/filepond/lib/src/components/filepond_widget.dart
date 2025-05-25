@@ -1,10 +1,13 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 
 import 'package:filepond/filepond.dart';
+import 'package:filepond/src/components/dashed_container.dart';
 import 'package:filepond/src/components/file_item.dart';
 import 'package:filepond/src/controller/filepond_operation.dart';
 import 'package:filepond/src/models/filepond_file.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class FilepondWidget extends StatefulWidget {
   const FilepondWidget({
@@ -12,30 +15,59 @@ class FilepondWidget extends StatefulWidget {
 
     // required this.controller
   });
-  // final FilepondController controller;
 
   @override
   State<FilepondWidget> createState() => _FilepondWidgetState();
 }
 
 class _FilepondWidgetState extends State<FilepondWidget> {
-  // var filesList = <File>[];
   late List<FilepondFile> filesList;
+  String? fileIcon;
   final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+  Future<String> loadSvgAndChangeColor({String color = "#2196F3"}) async {
+    // Load SVG as string from assets
+    String svgString = await rootBundle.loadString(
+      'packages/filepond/lib/src/assets/svg/folder-open-svgrepo-com.svg',
+    );
+    // Replace any hex color in the SVG with the desired color
+    // This regex matches hex colors like #FFF, #FFFFFF, #ffffffff
+    final hexColorRegExp = RegExp(r'#[0-9a-fA-F]{3,8}');
+    svgString = svgString.replaceAll(hexColorRegExp, color);
+    return svgString;
+  }
 
   @override
   void initState() {
-    WidgetsBinding.instance.addPostFrameCallback((s) {
+    WidgetsBinding.instance.addPostFrameCallback((s) async {
       var controller = Filepond.controllerOf(context);
       filesList = List.from(controller.files);
-
+      // fileIcon = await loadSvgAndChangeColor();
       controller.operationsStream.listen((operation) {
         switch (operation.type) {
           case UploadOperationType.insert:
-            _listKey.currentState!.insertItem(operation.index ?? 0);
             filesList = List.from(controller.files);
+            _listKey.currentState!.insertItem(operation.index ?? 0);
 
+          case UploadOperationType.remove:
+            if (operation.index != null) {
+              _listKey.currentState!.removeItem(
+                operation.index!,
+                (context, animation) => SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(0, 0),
+                    end: Offset(-1, 0), // Slide to the left when removed
+                  ).animate(
+                    CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+                  ),
+                  child: ListTile(title: Text('...')),
+                ),
+              );
+              filesList = List.from(controller.files);
+            }
+            break;
           case UploadOperationType.uploaded:
+            break;
+          case UploadOperationType.dublicate:
           default:
         }
       });
@@ -48,20 +80,6 @@ class _FilepondWidgetState extends State<FilepondWidget> {
   void didChangeDependencies() {
     super.didChangeDependencies();
   }
-
-  // @override
-  // void didUpdateWidget(covariant FilepondWidget oldWidget) {
-  //   var controller = Filepond.controllerOf(context);
-
-  //   log('depend change');
-  //   log(filesList.length.toString());
-  //   super.didUpdateWidget(oldWidget);
-  //   if (controller.files.isEmpty) {
-  //     filesList = [];
-  //     setState(() {});
-  //   }
-  //   filesList = List.from(controller.files);
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -82,10 +100,47 @@ class _FilepondWidgetState extends State<FilepondWidget> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              height: 45,
-              child: Center(child: Text('Drag & Drop or Browse')),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: DashedContainer(
+                width: double.infinity,
+                height: 200,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FutureBuilder(
+                      future: loadSvgAndChangeColor(
+                        color:
+                            '#${Theme.of(context).primaryColor.value.toRadixString(16).padLeft(8, '0').substring(2)}',
+                      ),
+                      builder:
+                          (context, snapshot) =>
+                              snapshot.hasData
+                                  ? SvgPicture.string(snapshot.data!)
+                                  : SizedBox(),
+                    ),
+                    Container(
+                      height: 45,
+                      child: Center(child: Text('Drag & Drop or Browse')),
+                    ),
+                  ],
+                ),
+              ),
             ),
+
+            // FutureBuilder(
+            //   builder:
+            //       (context, snapshot) =>
+            //           snapshot.hasData
+            //               ? SvgPicture.string(
+            //                 // snapshot.data!,
+            //                 'packages/filepond/lib/src/assets/svg/folder-open-svgrepo-com.svg',
+            //                 // fileIcon!,
+            //               )
+            //               : SizedBox(),
+            //   future: loadSvgAndChangeColor(),
+            // ),
+
             // if (filesList.isNotEmpty)
             MediaQuery.removePadding(
               context: context,

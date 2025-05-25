@@ -1,6 +1,6 @@
 name: filepond
 description: "FilePond, Where files go to stretch their bits."
-version: 0.0.1
+version: 0.0.2
 homepage: https://github.com/devnoaman/filepond
 resolution: workspace
 
@@ -14,8 +14,11 @@ dependencies:
   file_picker: ^10.1.9
   flutter:
     sdk: flutter
+  flutter_svg: ^2.1.0
   path: ^1.9.1
+  path_provider: ^2.1.5
   plugin_platform_interface: ^2.0.2
+  pro_image_editor: ^9.8.1
 
 dev_dependencies:
   flutter_test:
@@ -52,9 +55,9 @@ flutter:
         pluginClass: FilepondPluginCApi
 
   # To add assets to your plugin package, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - lib/src/assets/svg/
+    # - images/a_dot_ham.jpeg
   #
   # For details regarding assets in packages, see
   # https://flutter.dev/to/asset-from-package
