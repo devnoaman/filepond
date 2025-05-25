@@ -1,7 +1,6 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 
 import 'dart:developer';
-import 'dart:io';
 
 import 'package:filepond/src/components/file_item_widget.dart';
 import 'package:filepond/src/components/filepond.dart';
