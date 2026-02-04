@@ -1,7 +1,7 @@
 name: fileponder
 publish_to: none
 environment:
-  sdk: ^3.7.2
+  sdk: ^3.8.1
 workspace:
   - packages/filepond
 dev_dependencies:

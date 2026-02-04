@@ -1,4 +1,5 @@
-import 'package:filepond/src/models/filepond_file.dart';
+// import 'package:filepond/src/models/filepond_file.dart';
+part of 'controller.dart';
 
 /// Enum representing the type of operation performed on the file list.
 enum UploadOperationType {
@@ -15,6 +16,7 @@ enum UploadOperationType {
 
   ///indicate that the file removed successfully
   remove,
+  uploading,
 
   /// indicate that the file is a dublicate from other file
   dublicate,
@@ -50,12 +52,14 @@ class FilepondOperation {
   /// Creates an insert operation.
   factory FilepondOperation.insert(FilepondFile file, int index) =>
       FilepondOperation._(UploadOperationType.insert, file: file, index: index);
-  factory FilepondOperation.uploaded(FilepondFile file, int index) =>
-      FilepondOperation._(
-        UploadOperationType.uploaded,
-        file: file,
-        index: index,
-      );
+  factory FilepondOperation.uploaded(FilepondFile file, int index) {
+    Logger.warn(message: 'attempt to insert at index $index');
+    return FilepondOperation._(
+      UploadOperationType.uploaded,
+      file: file,
+      index: index,
+    );
+  }
 
   /// Creates an update operation.
   factory FilepondOperation.update(FilepondFile oldFile, FilepondFile file) =>
@@ -68,6 +72,8 @@ class FilepondOperation {
   /// Creates a remove operation.
   factory FilepondOperation.remove(FilepondFile file, int index) =>
       FilepondOperation._(UploadOperationType.remove, file: file, index: index);
+  factory FilepondOperation.uploading(FilepondFile file, int index) =>
+      FilepondOperation._(UploadOperationType.remove, file: file, index: index);
   factory FilepondOperation.failed(
     FilepondFile file,
     int index, [
@@ -78,7 +84,6 @@ class FilepondOperation {
     index: index,
     errorMessage: message,
   );
-
 
   factory FilepondOperation.dublicate(
     FilepondFile file,

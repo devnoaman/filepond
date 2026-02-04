@@ -1,16 +1,17 @@
 import 'package:filepond/src/components/filepond_widget.dart';
-import 'package:filepond/src/controller/controller.dart';
 import 'package:flutter/widgets.dart';
 
+import '../controller/controller.dart';
+
 class Filepond extends InheritedWidget {
-  Filepond({super.key, required this.controller})
-    : super(child: FilepondWidget());
+  Filepond({super.key, required this.controller, this.title})
+    : super(child: FilepondWidget(title: title));
   // static FilepondController _initController(FilepondController? cnt) {
   //   return cnt ?? FilepondController(baseUrl: 'localhost:3000');
   // }
 
   /// a Url wich will used to upload files to it
-  // final String baseUrl;
+  final String? title;
   final FilepondController controller;
   static Filepond? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<Filepond>();
@@ -31,6 +32,6 @@ class Filepond extends InheritedWidget {
 
   @override
   bool updateShouldNotify(covariant Filepond oldWidget) {
-    return true;
+    return oldWidget.controller != controller;
   }
 }

@@ -2,11 +2,16 @@
 
 import 'dart:io';
 
+// import 'package:filepond/filepond.dart';
 import 'package:filepond/src/components/image_editor.dart';
-import 'package:filepond/src/controller/controller.dart';
-import 'package:filepond/src/models/filepond_file.dart';
+import 'package:flutter/foundation.dart';
+// import 'package:filepond/src/models/filepond_file.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' show basename;
+import 'package:square_progress_indicator/square_progress_indicator.dart';
+
+import '../../filepond.dart';
 
 class ImageItemWidget extends StatelessWidget {
   const ImageItemWidget({
@@ -15,19 +20,24 @@ class ImageItemWidget extends StatelessWidget {
     this.width = double.infinity,
     this.widgetHeight = 200.0,
     required this.theme,
-    required this.controller,
+    this.onRemove,
+    // required this.controller,
   });
 
   final FilepondFile? file;
   final double width;
   final double widgetHeight;
   final ThemeData theme;
-  final FilepondController controller;
+  final void Function()? onRemove;
+  // final FilepondController controller;
 
   @override
   Widget build(BuildContext context) {
+    var controller = Filepond.controllerOf(context);
+    // controller.uploadAll();
+
     return Padding(
-      padding: const EdgeInsets.all(4.0),
+      padding: const EdgeInsets.only(top: 4),
       child: Material(
         color: file?.filepond != null ? Colors.green : null,
 
@@ -35,72 +45,119 @@ class ImageItemWidget extends StatelessWidget {
         clipBehavior: Clip.hardEdge,
         child: Stack(
           children: [
-            Image.file(file!.file, width: width, height: widgetHeight),
+            // if (file?.filepond == null)
+            // SquareProgressIndicator(width: width, height: widgetHeight),
+            Image.memory(
+              file!.file,
+              width: width,
+              height: widgetHeight,
+              fit: BoxFit.cover,
+            ),
             Container(
               height: widgetHeight,
               width: width,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  // stops: [1, .8, .6, .4, 0],
+                  // stops: [.6, 0, .5],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
+
+                  stops: [
+                    0.0,
+                    0.8,
+                    1.0,
+                  ], // shadow starts strong at top, fades downward
                   colors: [
-                    theme.primaryColor.withValues(alpha: .8),
-                    // Colors.grey,
+                    theme.primaryColor.withOpacity(0.8), // shadow color at top
                     Colors.transparent,
-                    // Colors.grey,
-                    theme.primaryColor.withValues(alpha: .8),
+                    Colors.transparent,
                   ],
+                  // colors: [
+                  //   theme.primaryColor.withValues(alpha: .8),
+                  //   // Colors.grey,
+                  //   Colors.transparent,
+                  //   // Colors.grey,
+                  //   theme.primaryColor.withValues(alpha: .8),
+                  // ],
                 ),
               ),
             ),
             ListTile(
               // tileColor:
-              title:
-                  file == null
-                      ? LinearProgressIndicator()
-                      : Text(basename(file!.file.path)),
+              iconColor: Colors.white,
+              title: file == null
+                  ? LinearProgressIndicator()
+                  : Text(
+                      basename(file!.fileName!),
+                      maxLines: 2,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyLarge!.copyWith(color: Colors.white),
+                    ),
               leading: IconButton(
                 onPressed: () {
-                  controller.removeFile(file!);
+                  if (kDebugMode) {
+                    print(
+                      'FileItem: Remove button pressed for ${file?.fileName}',
+                    );
+                  }
+
+                  // controller.removeFile(file!);
+                  onRemove?.call();
                 },
                 icon: Icon(Icons.close),
               ),
-              trailing:
-                  file?.filepond != null
-                      ? null
-                      : IconButton(
-                        onPressed: () {
-                          controller.uploadFile(file!);
-                        },
-                        icon: Icon(Icons.upload),
-                      ),
+              trailing: file?.filepond != null
+                  ? null
+                  : IconButton(
+                      onPressed: () {
+                        controller.uploadFile(file!);
+                      },
+                      icon: Icon(Icons.upload),
+                    ),
             ),
-            PositionedDirectional(
-              bottom: 16,
-              start: 16,
-              child: IconButton.filled(
-                onPressed: () async {
-                  if (file != null && context.mounted) {
-                    var newFile = await Navigator.of(context).push<File?>(
-                      MaterialPageRoute(
-                        builder: (context) => ImageEditor(file: file!.file),
-                      ),
-                    );
-                    if (newFile != null) {
-                      print(newFile.path);
-                      controller.updateFile(
-                        file!,
-                        FilepondFile(id: newFile.path, file: newFile),
-                        // index,
-                        // file!.copyWith(filepond: null, file: newFile),
+            if (controller.allowEdit)
+              PositionedDirectional(
+                bottom: 16,
+                start: 16,
+                child: IconButton.filled(
+                  onPressed: () async {
+                    if (file != null && context.mounted) {
+                      var newFile = await Navigator.of(context).push<File?>(
+                        MaterialPageRoute(
+                          builder: (context) => ImageEditor(
+                            file: File(XFile.fromData(file!.file).path),
+                          ),
+                        ),
                       );
+                      if (newFile != null) {
+                        print(newFile.path);
+                        controller.updateFile(
+                          file!,
+                          FilepondFile(
+                            id: newFile.path,
+                            file: newFile.readAsBytesSync(),
+                            fileName: basename(newFile.path),
+                          ),
+                          // index,
+                          // file!.copyWith(filepond: null, file: newFile),
+                        );
+                      }
                     }
-                  }
-                },
-                icon: Icon(Icons.edit),
+                  },
+                  icon: Icon(Icons.edit),
+                ),
               ),
-            ),
+            // CircularProgressIndicator(),
+            if (file?.filepond == null)
+              IgnorePointer(
+                child: SquareProgressIndicator(
+                  width: width,
+                  color: Theme.of(context).primaryColor,
+                  height: widgetHeight,
+                  strokeCap: StrokeCap.round,
+                ),
+              ),
           ],
         ),
       ),
