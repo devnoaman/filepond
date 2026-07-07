@@ -139,7 +139,7 @@ class FilepondController with UploadProgressMixin {
         //   // TODO: Handle this case.
         //   throw UnimplementedError();
         case SourceType.files:
-          var result = await FilePicker.platform.pickFiles(
+          var result = await FilePicker.pickFiles(
             type: FileType.custom,
             allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg'],
           );
