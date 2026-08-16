@@ -144,7 +144,7 @@ class FilepondController with UploadProgressMixin {
             allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg'],
           );
           if (result != null) {
-            File file = File(result.files.single.path!);
+            File file = File(result.single.path!);
             var filepondFile = FilepondFile(
               id: file.path,
               file: file.readAsBytesSync(),
