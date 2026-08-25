@@ -11,12 +11,14 @@ class Filepond extends InheritedWidget {
     this.subTitle,
     this.builder,
     this.itemBuilder,
+    this.subTitleBuilder,
   }) : super(
          child: FilepondWidget(
            title: title,
            subTitle: subTitle,
            builder: builder,
            itemBuilder: itemBuilder,
+           subTitleBuilder: subTitleBuilder,
          ),
        );
 
@@ -25,6 +27,7 @@ class Filepond extends InheritedWidget {
   final FilepondController controller;
   final FilepondBuilder? builder;
   final FilepondItemBuilder? itemBuilder;
+  final SubTitleBuilder? subTitleBuilder;
   static Filepond? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<Filepond>();
   }
