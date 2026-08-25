@@ -363,7 +363,13 @@ class FilepondController with UploadProgressMixin {
     Logger.warn(message: 'trying to upload');
 
     Dio dio = dioClient ?? Dio()
-      ..interceptors.addAll([AwesomeDioInterceptor()]);
+      ..interceptors.addAll([
+        LogInterceptor(
+          logPrint: (Object? message) {
+            Logger.warn(message: message.toString());
+          },
+        ),
+      ]);
 
     final int index = files.indexOf(file);
     // Handle case where file might not be found (though unlikely if called from within the controller's managed files)
