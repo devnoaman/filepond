@@ -23,7 +23,8 @@ typedef FilepondBuilder =
       FilepondController controller,
       bool isAttaching,
     );
-
+typedef SubTitleBuilder =
+    String Function(BuildContext context, FilepondController controller);
 typedef FilepondWidgetBuilder = FilepondBuilder;
 
 typedef FilepondItemBuilder =
@@ -42,14 +43,17 @@ class FilepondWidget extends StatefulWidget {
     super.key,
     this.title,
     this.subTitle,
+
     this.builder,
     this.itemBuilder,
+    this.subTitleBuilder,
     // required this.controller
   });
   final String? title;
   final String? subTitle;
   final FilepondBuilder? builder;
   final FilepondItemBuilder? itemBuilder;
+  final SubTitleBuilder? subTitleBuilder;
 
   @override
   State<FilepondWidget> createState() => _FilepondWidgetState();
@@ -377,7 +381,12 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                                     height: 45,
                                     child: Center(
                                       child: Text(
-                                        'Select only ${controller.maxLength}',
+                                        widget.subTitleBuilder != null
+                                            ? widget.subTitleBuilder!(
+                                                context,
+                                                controller,
+                                              )
+                                            : 'Select only ${controller.maxLength}',
                                       ),
                                     ),
                                   ),

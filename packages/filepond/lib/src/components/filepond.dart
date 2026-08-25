@@ -19,11 +19,7 @@ class Filepond extends InheritedWidget {
            itemBuilder: itemBuilder,
          ),
        );
-  // static FilepondController _initController(FilepondController? cnt) {
-  //   return cnt ?? FilepondController(baseUrl: 'localhost:3000');
-  // }
 
-  /// a Url wich will used to upload files to it
   final String? title;
   final String? subTitle;
   final FilepondController controller;
