@@ -365,8 +365,6 @@ class FilepondController with UploadProgressMixin {
     Dio dio = dioClient ?? Dio()
       ..interceptors.addAll([AwesomeDioInterceptor()]);
 
-    // final formData =;
-    final id = file.fileName;
     final int index = files.indexOf(file);
     // Handle case where file might not be found (though unlikely if called from within the controller's managed files)
     if (index == -1) {
@@ -397,7 +395,11 @@ class FilepondController with UploadProgressMixin {
 
         onSendProgress: (sent, total) {
           if (total > 0) {
-            updateUploadProgress(id!, sent / total);
+            final progress = sent / total;
+            updateUploadProgress(file.id, progress);
+            if (file.fileName != null && file.fileName != file.id) {
+              updateUploadProgress(file.fileName!, progress);
+            }
           }
         },
       );

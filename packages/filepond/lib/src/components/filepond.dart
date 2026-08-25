@@ -4,15 +4,31 @@ import 'package:flutter/widgets.dart';
 import '../controller/controller.dart';
 
 class Filepond extends InheritedWidget {
-  Filepond({super.key, required this.controller, this.title})
-    : super(child: FilepondWidget(title: title));
+  Filepond({
+    super.key,
+    required this.controller,
+    this.title,
+    this.subTitle,
+    this.builder,
+    this.itemBuilder,
+  }) : super(
+         child: FilepondWidget(
+           title: title,
+           subTitle: subTitle,
+           builder: builder,
+           itemBuilder: itemBuilder,
+         ),
+       );
   // static FilepondController _initController(FilepondController? cnt) {
   //   return cnt ?? FilepondController(baseUrl: 'localhost:3000');
   // }
 
   /// a Url wich will used to upload files to it
   final String? title;
+  final String? subTitle;
   final FilepondController controller;
+  final FilepondBuilder? builder;
+  final FilepondItemBuilder? itemBuilder;
   static Filepond? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<Filepond>();
   }
