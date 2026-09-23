@@ -316,6 +316,14 @@ class _FilepondWidgetState extends State<FilepondWidget> {
     super.dispose();
   }
 
+  /// Subtitle under the title: `subTitleBuilder` > `subTitle` > default text.
+  String _subTitle(BuildContext context, FilepondController controller) {
+    if (widget.subTitleBuilder != null) {
+      return widget.subTitleBuilder!(context, controller);
+    }
+    return widget.subTitle ?? 'Select only ${controller.maxLength}';
+  }
+
   @override
   Widget build(BuildContext context) {
     var controller = Filepond.controllerOf(context);
@@ -381,12 +389,7 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                                     height: 45,
                                     child: Center(
                                       child: Text(
-                                        widget.subTitleBuilder != null
-                                            ? widget.subTitleBuilder!(
-                                                context,
-                                                controller,
-                                              )
-                                            : 'Select only ${controller.maxLength}',
+                                        _subTitle(context, controller),
                                       ),
                                     ),
                                   ),
@@ -430,7 +433,7 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                                     height: 45,
                                     child: Center(
                                       child: Text(
-                                        'Select only ${controller.maxLength}',
+                                        _subTitle(context, controller),
                                       ),
                                     ),
                                   ),
@@ -473,7 +476,7 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                                         height: 45,
                                         child: Center(
                                           child: Text(
-                                            'Select only ${controller.maxLength}',
+                                            _subTitle(context, controller),
                                           ),
                                         ),
                                       ),
