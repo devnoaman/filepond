@@ -131,7 +131,8 @@ class FilepondController with UploadProgressMixin {
   ///
   /// Emits a [FilepondOperation.insert] event on success.
   Future<void> attachFile() async {
-    if ((maxLength ?? 0) <= files.length) return;
+    // null maxLength = no limit (previously null blocked every pick).
+    if (maxLength != null && files.length >= maxLength!) return;
 
     try {
       switch (sourceType) {
