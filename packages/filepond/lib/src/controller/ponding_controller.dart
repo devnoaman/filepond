@@ -169,9 +169,13 @@ class FilepondController with UploadProgressMixin {
             final int index = files.indexOf(filepondFile);
 
             print(file.path);
+            onFilesChange?.call(files);
             _operationsController.add(
               FilepondOperation.insert(filepondFile, index),
             );
+            if (uploadDirectly == true) {
+              uploadAll();
+            }
           } else {
             // User canceled the picker
           }
