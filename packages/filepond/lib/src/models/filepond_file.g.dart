@@ -14,6 +14,10 @@ _FilepondFile _$FilepondFileFromJson(Map<String, dynamic> json) =>
       fileName: json['fileName'] as String?,
       uploadName: json['uploadName'] as String?,
       uploading: json['uploading'] as bool? ?? false,
+      status:
+          $enumDecodeNullable(_$FilepondFileStatusEnumMap, json['status']) ??
+          FilepondFileStatus.pending,
+      error: json['error'] as String?,
     );
 
 Map<String, dynamic> _$FilepondFileToJson(_FilepondFile instance) =>
@@ -24,4 +28,13 @@ Map<String, dynamic> _$FilepondFileToJson(_FilepondFile instance) =>
       'fileName': instance.fileName,
       'uploadName': instance.uploadName,
       'uploading': instance.uploading,
+      'status': _$FilepondFileStatusEnumMap[instance.status]!,
+      'error': instance.error,
     };
+
+const _$FilepondFileStatusEnumMap = {
+  FilepondFileStatus.pending: 'pending',
+  FilepondFileStatus.uploading: 'uploading',
+  FilepondFileStatus.uploaded: 'uploaded',
+  FilepondFileStatus.failed: 'failed',
+};

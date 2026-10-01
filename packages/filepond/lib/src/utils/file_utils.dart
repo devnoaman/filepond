@@ -5,10 +5,9 @@ enum FilepondWidgetType { file, image, undefined }
 class FileUtils {
   FileUtils._();
   static FilepondWidgetType getFileType(String path) {
-    final extension = p.extension(path);
+    final extension = p.extension(path).toLowerCase();
     switch (extension) {
       case '.pdf':
-        print('pdf file');
         return FilepondWidgetType.file;
 
       case '.png':

@@ -4,7 +4,6 @@ import 'dart:io';
 
 // import 'package:filepond/filepond.dart';
 import 'package:filepond/src/components/image_editor.dart';
-import 'package:flutter/foundation.dart';
 // import 'package:filepond/src/models/filepond_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -39,7 +38,11 @@ class ImageItemWidget extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Material(
-        color: file?.filepond != null ? Colors.green : null,
+        color: switch (file?.status) {
+          FilepondFileStatus.uploaded => Colors.green,
+          FilepondFileStatus.failed => theme.colorScheme.error,
+          _ => null,
+        },
 
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         clipBehavior: Clip.hardEdge,
@@ -96,29 +99,28 @@ class ImageItemWidget extends StatelessWidget {
                     ),
               leading: IconButton(
                 onPressed: () {
-                  if (kDebugMode) {
-                    print(
-                      'FileItem: Remove button pressed for ${file?.fileName}',
-                    );
+                  if (onRemove != null) {
+                    onRemove!.call();
+                  } else if (file != null) {
+                    controller.removeFile(file!);
                   }
-
-                  // controller.removeFile(file!);
-                  onRemove?.call();
                 },
                 icon: Icon(Icons.close),
               ),
-              trailing: file?.filepond != null
-                  ? null
-                  : IconButton(
+              trailing: file?.isPending ?? false
+                  ? IconButton(
+                      tooltip: 'Upload',
                       onPressed: () {
                         controller.uploadFile(file!);
                       },
                       icon: Icon(Icons.upload),
-                    ),
+                    )
+                  : null,
             ),
             if (controller.allowEdit)
               PositionedDirectional(
-                bottom: 16,
+                // Sits above the status overlay while the file isn't uploaded.
+                bottom: file != null && !file!.isUploaded ? 72 : 16,
                 start: 16,
                 child: IconButton.filled(
                   onPressed: () async {
@@ -131,7 +133,6 @@ class ImageItemWidget extends StatelessWidget {
                         ),
                       );
                       if (newFile != null) {
-                        print(newFile.path);
                         controller.updateFile(
                           file!,
                           FilepondFile(
@@ -149,13 +150,33 @@ class ImageItemWidget extends StatelessWidget {
                 ),
               ),
             // CircularProgressIndicator(),
-            if (file?.filepond == null)
+            if (file?.isUploading ?? false)
               IgnorePointer(
                 child: SquareProgressIndicator(
                   width: width,
                   color: Theme.of(context).primaryColor,
                   height: widgetHeight,
                   strokeCap: StrokeCap.round,
+                ),
+              ),
+            if (file != null && !file!.isUploaded)
+              PositionedDirectional(
+                start: 8,
+                end: 8,
+                bottom: 8,
+                child: Material(
+                  color: theme.colorScheme.surface.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    child: FilepondFileStatusBar(
+                      file: file!,
+                      controller: controller,
+                    ),
+                  ),
                 ),
               ),
           ],

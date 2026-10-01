@@ -9,15 +9,13 @@ class Logger {
     logger.emmit(message);
     return logger;
   }
+
+  /// Writes one log entry (prefix + message) via `dart:developer`.
   void emmit(String message, [StackTrace? stackTrace]) {
-    log('''
-$logPrefix 
-''');
-    log('''
-$message 
-''');
-    log('''
-$stackTrace 
-''');
+    log(
+      logPrefix == null ? message : '$logPrefix: $message',
+      name: 'filepond',
+      stackTrace: stackTrace,
+    );
   }
 }

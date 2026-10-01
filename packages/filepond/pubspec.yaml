@@ -1,6 +1,6 @@
 name: filepond
 description: "FilePond, Where files go to stretch their bits."
-version: 0.0.2
+version: 0.1.0
 homepage: https://github.com/devnoaman/filepond
 resolution: workspace
 
