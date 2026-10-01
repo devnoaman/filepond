@@ -32,31 +32,61 @@ Import the package in your Dart code:
 import 'package:filepond/filepond.dart';
 ```
 
-Wrap your widget tree with the `Filepond` widget and provide a controller:
+Create the controller in a `State`, render a `Filepond` field, and dispose
+the controller with the page:
 
 ```dart
 import 'package:filepond/filepond.dart';
+import 'package:flutter/material.dart';
 
-class MyFileUploader extends StatelessWidget {
-  final controller = FilepondController(baseUrl: 'http://localhost:3000/upload');
+class AttachmentsForm extends StatefulWidget {
+  const AttachmentsForm({super.key});
+
+  @override
+  State<AttachmentsForm> createState() => _AttachmentsFormState();
+}
+
+class _AttachmentsFormState extends State<AttachmentsForm> {
+  late final _attachments = FilepondController(
+    baseUrl: 'https://api.example.com/upload',
+    uploadName: 'file',               // multipart field name
+    sourceType: SourceType.files,     // or gallery / camera
+    uploadDirectly: true,             // upload as soon as a file is picked
+    maxLength: 3,
+  );
+
+  @override
+  void dispose() {
+    _attachments.dispose(); // cancels in-flight uploads
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Filepond(
-      controller: controller,
-      // FilepondWidget is used internally as the child
+    return Column(
+      children: [
+        Filepond(controller: _attachments, title: 'Attach files'),
+        ListenableBuilder(
+          listenable: _attachments,
+          builder: (context, _) => FilledButton(
+            onPressed: _attachments.isSettled ? _send : null,
+            child: const Text('Send'),
+          ),
+        ),
+      ],
     );
+  }
+
+  void _send() {
+    // Ids returned by the server, one per uploaded file.
+    final ids = _attachments.files.map((f) => f.filepond).toList();
+    // ...submit ids with the rest of the form
   }
 }
 ```
 
-To access the controller anywhere in the widget subtree, use:
-
-```dart
-final controller = Filepond.controllerOf(context);
-```
-
-You can then call upload methods or listen to progress using the controller.
+Inside `builder` / `itemBuilder`, the controller is also available as
+`Filepond.controllerOf(context)`.
 
 ## Upload status
 
@@ -108,9 +138,11 @@ flutter test            # unit + widget tests (fake Dio adapter, no network)
 `test/support/fake_upload_server.dart` is an in-memory Dio adapter you can
 script per file name (`replyFor`, `hold` / `release`, network errors).
 
-## Example: Upload Lab
+## Example
 
-[`apps/example`](../../apps/example) is an interactive lab: choose a server
+[`apps/example`](../../apps/example) has two tabs. **Basic usage**
+([`basic_usage_page.dart`](../../apps/example/lib/basic/basic_usage_page.dart))
+is the snippet above as a runnable form. **Upload Lab** is an interactive lab: choose a server
 scenario (200, 201, 500, 422, network error, slow, flaky, mixed, random),
 add generated sample files or pick real ones, and watch statuses, the
 `operationsStream` log, controller getters and the submit gate live.

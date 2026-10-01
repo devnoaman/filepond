@@ -195,7 +195,10 @@ class _UploadLabPageState extends State<UploadLabPage> {
             ];
             final work = [
               _fieldCard(context),
-              _EventLog(events: _events, onClear: () => setState(_events.clear)),
+              _EventLog(
+                events: _events,
+                onClear: () => setState(_events.clear),
+              ),
             ];
             if (!wide) {
               return ListView(
@@ -414,7 +417,8 @@ class _UploadLabPageState extends State<UploadLabPage> {
       FilepondFileStatus.uploaded => (Colors.green, 'Uploaded'),
       FilepondFileStatus.failed => (scheme.error, 'Failed'),
     };
-    final isImage = (file.fileName ?? '').toLowerCase().endsWith('.png') ||
+    final isImage =
+        (file.fileName ?? '').toLowerCase().endsWith('.png') ||
         (file.fileName ?? '').toLowerCase().endsWith('.jpg') ||
         (file.fileName ?? '').toLowerCase().endsWith('.jpeg');
 
@@ -614,7 +618,10 @@ class _StateCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Text(k, style: Theme.of(context).textTheme.bodySmall),
       ),
-      Text(v, style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()])),
+      Text(
+        v,
+        style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
+      ),
     ],
   );
 }
@@ -632,7 +639,9 @@ class _Flag extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color = good == null
         ? (value ? scheme.primary : scheme.outline)
-        : (value == good ? Colors.green : (value ? scheme.error : scheme.outline));
+        : (value == good
+              ? Colors.green
+              : (value ? scheme.error : scheme.outline));
     return Chip(
       avatar: Icon(
         value ? Icons.check_circle : Icons.radio_button_unchecked,

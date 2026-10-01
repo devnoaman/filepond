@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -46,7 +45,8 @@ class LabServer implements HttpClientAdapter {
   ) async {
     // Read the body like a socket would; this drives onSendProgress.
     var bytes = 0;
-    await for (final chunk in requestStream ?? const Stream<Uint8List>.empty()) {
+    await for (final chunk
+        in requestStream ?? const Stream<Uint8List>.empty()) {
       bytes += chunk.length;
       await Future<void>.delayed(const Duration(milliseconds: 4));
     }

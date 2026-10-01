@@ -3,15 +3,12 @@
 import 'dart:async';
 
 import 'package:filepond/filepond.dart';
-import 'package:filepond/src/attaching_notifier.dart';
 import 'package:filepond/src/components/dashed_container.dart';
 import 'package:filepond/src/components/file_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:iconsax/iconsax.dart';
-
-import '../controller/controller.dart';
 
 typedef FilepondBuilder =
     Widget Function(
@@ -57,7 +54,7 @@ class FilepondWidget extends StatefulWidget {
 
 class _FilepondWidgetState extends State<FilepondWidget> {
   // late List<FilepondFile> filesList;
-  List<FilepondFile> _filesList =
+  final List<FilepondFile> _filesList =
       []; // Changed to private _filesList for clarity
   //
   String? fileIcon;
@@ -118,7 +115,8 @@ class _FilepondWidgetState extends State<FilepondWidget> {
     switch (operation.type) {
       case UploadOperationType.insert:
         final index = operation.index;
-        if (file != null && index != null &&
+        if (file != null &&
+            index != null &&
             !_filesList.any((f) => f.id == file.id)) {
           final at = index < 0
               ? 0
@@ -134,12 +132,8 @@ class _FilepondWidgetState extends State<FilepondWidget> {
           final removedFile = _filesList.removeAt(index);
           _listKey.currentState?.removeItem(
             index,
-            (context, animation) => _buildRemovedItem(
-              context,
-              removedFile,
-              index,
-              animation,
-            ),
+            (context, animation) =>
+                _buildRemovedItem(context, removedFile, index, animation),
             duration: const Duration(milliseconds: 300),
           );
         }
@@ -224,81 +218,73 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                         SourceType.gallery => DashedContainer(
                           width: double.infinity,
                           height: 200,
-                          child: Container(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Iconsax.gallery,
-                                  size: 40,
-                                  color: theme.primaryColor,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Iconsax.gallery,
+                                size: 40,
+                                color: theme.primaryColor,
+                              ),
+                              SizedBox(
+                                height: 45,
+                                child: Center(
+                                  child: Text(
+                                    widget.title ?? 'Select image',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge,
+                                  ),
                                 ),
-                                Container(
+                              ),
+                              if (controller.maxLength != null)
+                                SizedBox(
                                   height: 45,
                                   child: Center(
-                                    child: Text(
-                                      widget.title ?? 'Select image',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyLarge,
-                                    ),
+                                    child: Text(_subTitle(context, controller)),
                                   ),
                                 ),
-                                if (controller.maxLength != null)
-                                  Container(
-                                    height: 45,
-                                    child: Center(
-                                      child: Text(
-                                        _subTitle(context, controller),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                            ],
                           ),
                         ),
                         // TODO: Handle this case.
                         SourceType.camera => DashedContainer(
                           width: double.infinity,
                           height: 200,
-                          child: Container(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                v
-                                    ? Center(
-                                        child:
-                                            CircularProgressIndicator.adaptive(),
-                                      )
-                                    : Icon(
-                                        Iconsax.camera,
-                                        size: 40,
-                                        color: theme.primaryColor,
-                                      ),
-                                Container(
-                                  height: 45,
-                                  child: Center(
-                                    child: Text(
-                                      v == true
-                                          ? 'processing image, please wait ..'
-                                          : widget.title ?? 'Open camera',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyLarge,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              v
+                                  ? Center(
+                                      child:
+                                          CircularProgressIndicator.adaptive(),
+                                    )
+                                  : Icon(
+                                      Iconsax.camera,
+                                      size: 40,
+                                      color: theme.primaryColor,
                                     ),
+                              SizedBox(
+                                height: 45,
+                                child: Center(
+                                  child: Text(
+                                    v == true
+                                        ? 'processing image, please wait ..'
+                                        : widget.title ?? 'Open camera',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge,
                                   ),
                                 ),
-                                if (controller.maxLength != null)
-                                  Container(
-                                    height: 45,
-                                    child: Center(
-                                      child: Text(
-                                        _subTitle(context, controller),
-                                      ),
-                                    ),
+                              ),
+                              if (controller.maxLength != null)
+                                SizedBox(
+                                  height: 45,
+                                  child: Center(
+                                    child: Text(_subTitle(context, controller)),
                                   ),
-                              ],
-                            ),
+                                ),
+                            ],
                           ),
                         ),
                         // TODO: Handle this case.
@@ -316,14 +302,14 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                                     FutureBuilder(
                                       future: loadSvgAndChangeColor(
                                         color:
-                                            '#${Theme.of(context).primaryColor.value.toRadixString(16).padLeft(8, '0').substring(2)}',
+                                            '#${Theme.of(context).primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
                                       ),
                                       builder: (context, snapshot) =>
                                           snapshot.hasData
                                           ? SvgPicture.string(snapshot.data!)
                                           : SizedBox(),
                                     ),
-                                    Container(
+                                    SizedBox(
                                       height: 45,
                                       child: Center(
                                         child: Text(
@@ -332,7 +318,7 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                                       ),
                                     ),
                                     if (controller.maxLength != null)
-                                      Container(
+                                      SizedBox(
                                         height: 45,
                                         child: Center(
                                           child: Text(

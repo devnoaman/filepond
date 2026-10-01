@@ -71,7 +71,7 @@ class ImageItemWidget extends StatelessWidget {
                     1.0,
                   ], // shadow starts strong at top, fades downward
                   colors: [
-                    theme.primaryColor.withOpacity(0.8), // shadow color at top
+                    theme.primaryColor.withValues(alpha: 0.8), // shadow color at top
                     Colors.transparent,
                     Colors.transparent,
                   ],

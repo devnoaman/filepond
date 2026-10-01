@@ -242,11 +242,10 @@ class FilepondController extends ChangeNotifier with UploadProgressMixin {
   }
 
   Future<void> _attachFromFilePicker() async {
-    final result = await FilePicker.pickFiles(
+    final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: allowedExtensions,
     );
-    final picked = result?.files ?? const <PlatformFile>[];
     final path = picked.isEmpty ? null : picked.first.path;
     if (path == null) return; // user cancelled
 

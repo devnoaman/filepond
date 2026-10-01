@@ -1,6 +1,13 @@
-# Filepond Upload Lab
+# Filepond examples
 
-Interactive playground for the `filepond` package's per-file upload status.
+Two tabs:
+
+- **Basic usage** (`lib/basic/basic_usage_page.dart`): the minimal
+  integration. A form with an attachments field (files, max 3, upload
+  directly) and a send button enabled only when `controller.isSettled`.
+  Uploads go to an in-memory server, so it runs without a backend.
+- **Upload Lab** (`lib/lab/`): an interactive playground for the package's
+  per-file upload status, described below.
 
 ```sh
 flutter run                                   # in-app fake server, no backend needed
@@ -22,4 +29,5 @@ What you can do:
 - **HTTP server mode**: point the lab at the mock server (Android emulator:
   `http://10.0.2.2:3010/upload`). The scenario is sent as `x-scenario`.
 
-`flutter test` runs a widget test that walks through the acceptance flow.
+`flutter test` runs a smoke test for the basic page and a widget test that
+walks through the lab's acceptance flow.
