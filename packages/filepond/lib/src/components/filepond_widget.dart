@@ -1,21 +1,14 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 
 import 'dart:async';
-import 'dart:developer';
 
 import 'package:filepond/filepond.dart';
-import 'package:filepond/src/attaching_notifier.dart';
 import 'package:filepond/src/components/dashed_container.dart';
 import 'package:filepond/src/components/file_item.dart';
-import 'package:filepond/src/utils/listener.dart';
-import 'package:filepond/src/utils/logger.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:iconsax/iconsax.dart';
-
-import '../controller/controller.dart';
 
 typedef FilepondBuilder =
     Widget Function(
@@ -61,11 +54,11 @@ class FilepondWidget extends StatefulWidget {
 
 class _FilepondWidgetState extends State<FilepondWidget> {
   // late List<FilepondFile> filesList;
-  List<FilepondFile> _filesList =
+  final List<FilepondFile> _filesList =
       []; // Changed to private _filesList for clarity
   //
   String? fileIcon;
-  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+  GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   Future<String> loadSvgAndChangeColor({String color = "#2196F3"}) async {
     // Load SVG as string from assets
     String svgString = await rootBundle.loadString(
@@ -78,245 +71,109 @@ class _FilepondWidgetState extends State<FilepondWidget> {
     return svgString;
   }
 
-  // / Declare variables to hold the controller and stream subscription
-  late FilepondController _controller;
+  FilepondController? _controller;
   StreamSubscription<FilepondOperation>? _operationSubscription;
-  @override
-  void initState() {
-    super.initState();
-    if (kDebugMode) debugPrint('FilepondWidgetState: initState called');
-    // final newController = Filepond.controllerOf(context);
-
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      final controller = Filepond.controllerOf(context);
-      _controller = controller;
-
-      if (kDebugMode) {
-        debugPrint(
-          'FilepondWidgetState: Initial _filesList count: ${_filesList.length}',
-        );
-      }
-
-      // _operationSubscription = _controller.operationsStream.listen;
-    });
-
-    // WidgetsBinding.instance.addPostFrameCallback((s) async {
-    //   var controller = Filepond.controllerOf(context);
-    //   // filesList = List.from(controller.files);
-    //   _filesList.addAll(controller.files);
-
-    //   // fileIcon = await loadSvgAndChangeColor();
-    // });
-  }
-
-  void _onRemoveFile(FilepondFile fileToRemove) {
-    if (kDebugMode) {
-      debugPrint(
-        '_FilepondWidgetState: _onRemoveFile called for ${fileToRemove.fileName}',
-      );
-    }
-    var controller = Filepond.controllerOf(context);
-
-    controller.removeFile(fileToRemove); // Make sure this line is reached
-    if (kDebugMode) {
-      debugPrint('_FilepondWidgetState: _controller.removeFile invoked.');
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant FilepondWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (kDebugMode) debugPrint('FilepondWidgetState: didUpdateWidget called');
-  }
 
   @override
   void didChangeDependencies() {
-    // TODO: implement didChangeDependencies
     super.didChangeDependencies();
-
     final controller = Filepond.controllerOf(context);
-    _filesList.addAll(controller.files);
-    controller.operationsStream.listen((operation) {
-      if (kDebugMode) {
-        debugPrint(
-          'FilepondWidgetState: Operation received: ${operation.type}',
-        );
-      }
+    if (identical(controller, _controller)) return;
 
-      log(operation.type.toString());
-
-      switch (operation.type) {
-        case UploadOperationType.insert:
-
-          // filesList = List.from(controller.files);
-          // _listKey.currentState?.insertItem(operation.index ?? 0);
-          if (operation.file != null && operation.index != null) {
-            if (kDebugMode) {
-              debugPrint(
-                'FilepondWidgetState: Attempting insert at index ${operation.index}',
-              );
-            }
-
-            if (!_filesList.contains(operation.file)) {
-              // 1. Update the local data source FIRST
-              _filesList.insert(operation.index!, operation.file!);
-              // 2. Tell AnimatedList to animate the insertion
-              _listKey.currentState?.insertItem(operation.index!);
-            }
-          }
-
-          if (mounted) setState(() {});
-        // case UploadOperationType.uploading:
-        //   filesList = List.from(controller.files);
-        // // _listKey.currentState?.insertItem(operation.index ?? 0);
-
-        case UploadOperationType.remove:
-          if (kDebugMode) {
-            debugPrint(
-              'FilepondWidgetState: Attempting remove at index ${operation.index}',
-            );
-          }
-          if (operation.index != null && operation.index! < _filesList.length) {
-            final FilepondFile removedFile = _filesList[operation.index!];
-            _filesList.removeAt(operation.index!);
-            if (kDebugMode) {
-              debugPrint(
-                'FilepondWidgetState: _filesList count after data removal: ${_filesList.length}',
-              );
-            }
-
-            if (_listKey.currentState == null) {
-              if (kDebugMode) {
-                debugPrint(
-                  'ERROR: AnimatedListState is NULL during remove operation!',
-                );
-              }
-            } else {
-              _listKey.currentState?.removeItem(
-                operation.index!,
-                (context, animation) {
-                  if (kDebugMode) {
-                    debugPrint(
-                      'FilepondWidgetState: removeItem builder called for index ${operation.index}',
-                    );
-                  }
-                  if (widget.itemBuilder != null) {
-                    return SlideTransition(
-                      position:
-                          Tween<Offset>(
-                            begin: const Offset(0, 0),
-                            end: const Offset(-1, 0),
-                          ).animate(
-                            CurvedAnimation(
-                              parent: animation,
-                              curve: Curves.easeInOut,
-                            ),
-                          ),
-                      child: widget.itemBuilder!(
-                        context,
-                        removedFile,
-                        operation.index!,
-                        animation,
-                        () {},
-                      ),
-                    );
-                  }
-                  return SlideTransition(
-                    position:
-                        Tween<Offset>(
-                          begin: const Offset(0, 0),
-                          end: const Offset(-1, 0),
-                        ).animate(
-                          CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeInOut,
-                          ),
-                        ),
-                    child: FileItem(
-                      key: ObjectKey(removedFile),
-                      file: removedFile,
-                      animation: animation,
-                      index: operation.index!,
-                    ),
-                  );
-                },
-                duration: const Duration(
-                  milliseconds: 300,
-                ), // Keep a visible duration for testing
-              );
-              if (kDebugMode) {
-                debugPrint(
-                  'FilepondWidgetState: removeItem called on AnimatedListState for index ${operation.index}',
-                );
-              }
-            }
-          } else {
-            if (kDebugMode) {
-              debugPrint(
-                'FilepondWidgetState: Invalid index or file already removed for operation.index=${operation.index}',
-              );
-            }
-          }
-          if (mounted) setState(() {});
-
-          break;
-        // case UploadOperationType.uploading:
-        case UploadOperationType.uploaded:
-          // filesList = List.from(controller.files);
-          // setState(() {});
-          if (kDebugMode) {
-            debugPrint(
-              'FilepondWidgetState: Attempting update for index ${operation.index}',
-            );
-          }
-
-          if (operation.index != null &&
-              operation.file != null &&
-              operation.index! < _filesList.length) {
-            // Update the item in place in your local list
-            _filesList[operation.index!] = operation.file!;
-            // The `setState` wrapping this `switch` block will cause the `AnimatedList`
-            // to rebuild, which in turn will call `itemBuilder` for visible items.
-            // If `FileItem` is built with `_filesList[index]`, it will automatically
-            // reflect the updated `file` data.
-            // setState(() {});
-          }
-          if (mounted) setState(() {});
-
-          break;
-
-        case UploadOperationType.dublicate:
-          break;
-        case UploadOperationType.failed:
-          log('upload failed ');
-          log((controller.files?.length ?? 0).toString());
-          log(operation.message?.toString() ?? '');
-
-          // _filesList = controller.files;
-          break;
-        default:
-          if (kDebugMode) {
-            debugPrint(
-              'FilepondWidgetState: Unhandled operation type: ${operation.type}',
-            );
-          }
-          break;
-      }
-
-      if (kDebugMode) {
-        debugPrint('FilepondWidgetState: setState finished for operation.');
-      }
-      // controller.uploadAll();
-    });
+    // Subscribe once per controller; re-subscribing on every dependency
+    // change duplicated every event.
+    _operationSubscription?.cancel();
+    // A new controller means a new list: rebuild the AnimatedList from scratch.
+    if (_controller != null) _listKey = GlobalKey<AnimatedListState>();
+    _controller = controller;
+    _filesList
+      ..clear()
+      ..addAll(controller.files);
+    _operationSubscription = controller.operationsStream.listen(_onOperation);
   }
 
   @override
   void dispose() {
-    if (kDebugMode) debugPrint('FilepondWidgetState: dispose called');
+    _operationSubscription?.cancel();
     super.dispose();
   }
 
-  /// Subtitle under the title: `subTitleBuilder` > `subTitle` > default text.
+  void _onRemoveFile(FilepondFile fileToRemove) {
+    _controller?.removeFile(fileToRemove);
+  }
+
+  /// Replaces the local copy of a file (matched by id) after a status change.
+  void _replaceById(String id, FilepondFile file) {
+    final i = _filesList.indexWhere((f) => f.id == id);
+    if (i != -1) _filesList[i] = file;
+  }
+
+  void _onOperation(FilepondOperation operation) {
+    if (!mounted) return;
+    final file = operation.file;
+
+    switch (operation.type) {
+      case UploadOperationType.insert:
+        final index = operation.index;
+        if (file != null &&
+            index != null &&
+            !_filesList.any((f) => f.id == file.id)) {
+          final at = index < 0
+              ? 0
+              : (index > _filesList.length ? _filesList.length : index);
+          _filesList.insert(at, file);
+          _listKey.currentState?.insertItem(at);
+        }
+      case UploadOperationType.remove:
+        final index = file == null
+            ? -1
+            : _filesList.indexWhere((f) => f.id == file.id);
+        if (index != -1) {
+          final removedFile = _filesList.removeAt(index);
+          _listKey.currentState?.removeItem(
+            index,
+            (context, animation) =>
+                _buildRemovedItem(context, removedFile, index, animation),
+            duration: const Duration(milliseconds: 300),
+          );
+        }
+      case UploadOperationType.uploading:
+      case UploadOperationType.uploaded:
+      case UploadOperationType.failed:
+        if (file != null) _replaceById(file.id, file);
+      case UploadOperationType.update:
+        final oldFile = operation.oldFile;
+        if (oldFile != null && file != null) _replaceById(oldFile.id, file);
+      case UploadOperationType.dublicate:
+        break;
+    }
+
+    setState(() {});
+  }
+
+  Widget _buildRemovedItem(
+    BuildContext context,
+    FilepondFile removedFile,
+    int index,
+    Animation<double> animation,
+  ) {
+    final child = widget.itemBuilder != null
+        ? widget.itemBuilder!(context, removedFile, index, animation, () {})
+        : FileItem(
+            key: ObjectKey(removedFile),
+            file: removedFile,
+            animation: animation,
+            index: index,
+          );
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: Offset.zero,
+        end: const Offset(-1, 0),
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeInOut)),
+      child: child,
+    );
+  }
+
   String _subTitle(BuildContext context, FilepondController controller) {
     if (widget.subTitleBuilder != null) {
       return widget.subTitleBuilder!(context, controller);
@@ -336,7 +193,6 @@ class _FilepondWidgetState extends State<FilepondWidget> {
           ValueListenableBuilder<bool>(
             valueListenable: notifier.isAttaching,
             builder: (context, v, c) {
-              Logger.warn(message: 'attaching state $v');
               return RawMaterialButton(
                 // fillColor: Colors.grey.shade300,
                 elevation: 0,
@@ -351,9 +207,7 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                           controller.files.length >= controller.maxLength!)
                     ? null
                     : () async {
-                        await controller.attachFile().then((_) {
-                          Logger.warn(message: 'files attached');
-                        });
+                        await controller.attachFile();
                       },
                 child: widget.builder != null
                     ? widget.builder!(context, controller, v)
@@ -364,81 +218,73 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                         SourceType.gallery => DashedContainer(
                           width: double.infinity,
                           height: 200,
-                          child: Container(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Iconsax.gallery,
-                                  size: 40,
-                                  color: theme.primaryColor,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Iconsax.gallery,
+                                size: 40,
+                                color: theme.primaryColor,
+                              ),
+                              SizedBox(
+                                height: 45,
+                                child: Center(
+                                  child: Text(
+                                    widget.title ?? 'Select image',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge,
+                                  ),
                                 ),
-                                Container(
+                              ),
+                              if (controller.maxLength != null)
+                                SizedBox(
                                   height: 45,
                                   child: Center(
-                                    child: Text(
-                                      widget.title ?? 'Select image',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyLarge,
-                                    ),
+                                    child: Text(_subTitle(context, controller)),
                                   ),
                                 ),
-                                if (controller.maxLength != null)
-                                  Container(
-                                    height: 45,
-                                    child: Center(
-                                      child: Text(
-                                        _subTitle(context, controller),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                            ],
                           ),
                         ),
                         // TODO: Handle this case.
                         SourceType.camera => DashedContainer(
                           width: double.infinity,
                           height: 200,
-                          child: Container(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                v
-                                    ? Center(
-                                        child:
-                                            CircularProgressIndicator.adaptive(),
-                                      )
-                                    : Icon(
-                                        Iconsax.camera,
-                                        size: 40,
-                                        color: theme.primaryColor,
-                                      ),
-                                Container(
-                                  height: 45,
-                                  child: Center(
-                                    child: Text(
-                                      v == true
-                                          ? 'processing image, please wait ..'
-                                          : widget.title ?? 'Open camera',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyLarge,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              v
+                                  ? Center(
+                                      child:
+                                          CircularProgressIndicator.adaptive(),
+                                    )
+                                  : Icon(
+                                      Iconsax.camera,
+                                      size: 40,
+                                      color: theme.primaryColor,
                                     ),
+                              SizedBox(
+                                height: 45,
+                                child: Center(
+                                  child: Text(
+                                    v == true
+                                        ? 'processing image, please wait ..'
+                                        : widget.title ?? 'Open camera',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge,
                                   ),
                                 ),
-                                if (controller.maxLength != null)
-                                  Container(
-                                    height: 45,
-                                    child: Center(
-                                      child: Text(
-                                        _subTitle(context, controller),
-                                      ),
-                                    ),
+                              ),
+                              if (controller.maxLength != null)
+                                SizedBox(
+                                  height: 45,
+                                  child: Center(
+                                    child: Text(_subTitle(context, controller)),
                                   ),
-                              ],
-                            ),
+                                ),
+                            ],
                           ),
                         ),
                         // TODO: Handle this case.
@@ -456,14 +302,14 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                                     FutureBuilder(
                                       future: loadSvgAndChangeColor(
                                         color:
-                                            '#${Theme.of(context).primaryColor.value.toRadixString(16).padLeft(8, '0').substring(2)}',
+                                            '#${Theme.of(context).primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
                                       ),
                                       builder: (context, snapshot) =>
                                           snapshot.hasData
                                           ? SvgPicture.string(snapshot.data!)
                                           : SizedBox(),
                                     ),
-                                    Container(
+                                    SizedBox(
                                       height: 45,
                                       child: Center(
                                         child: Text(
@@ -472,7 +318,7 @@ class _FilepondWidgetState extends State<FilepondWidget> {
                                       ),
                                     ),
                                     if (controller.maxLength != null)
-                                      Container(
+                                      SizedBox(
                                         height: 45,
                                         child: Center(
                                           child: Text(

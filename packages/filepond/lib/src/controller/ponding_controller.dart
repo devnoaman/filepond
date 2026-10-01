@@ -1,38 +1,35 @@
-// ignore_for_file: public_member_api_docs, sort_constructors_first
+// The deprecated `uploading` flag is still written so it keeps mirroring
+// `status == FilepondFileStatus.uploading` for existing consumers.
+// ignore_for_file: deprecated_member_use_from_same_package
 
 part of 'controller.dart';
 
-/// FilepondController manages file selection, upload, and state updates for the Filepond widget.
+/// FilepondController manages file selection, upload, and state updates for
+/// the Filepond widget.
 ///
-/// Usage:
-///   - Instantiate with a [baseUrl] for uploads.
-///   - Call [attachFile] to prompt the user to pick a file.
-///   - Call [uploadFile] to upload a [FilepondFile].
-///   - Listen to [operationsStream] for file operation events (insert, uploaded, etc.).
+/// Every file in [files] carries an explicit [FilepondFile.status]:
+/// `pending → uploading → uploaded | failed`. Read the controller-level
+/// getters ([isSettled], [hasFailed], [isUploading]) to decide whether a form
+/// can be submitted, and listen to the controller (it is a [ChangeNotifier])
+/// or [filesListenable] to rebuild on status changes.
 ///
 /// Example:
 /// ```dart
-/// final controller = FilepondController(baseUrl: 'http://localhost:3000/upload');
-/// controller.attachFile();
-/// controller.uploadFile(controller.files.first);
-/// controller.operationsStream.listen((op) { ... });
+/// final controller = FilepondController(baseUrl: 'https://api.example.com/upload');
+/// await controller.attachFile();          // pick + add (+ upload if uploadDirectly)
+/// await controller.uploadAll();           // pending and failed files
+/// if (controller.hasFailed) await controller.retryAllFailed();
+/// final canSubmit = controller.isSettled;
+/// controller.dispose();                   // cancels in-flight uploads
 /// ```
-class FilepondController with UploadProgressMixin {
-  /// List of files managed by this controller.
-  var files = <FilepondFile>[];
-
-  /// The base URL to which files will be uploaded.
-  final String baseUrl;
-
-  /// The key path in the response data where the uploaded file info is located.
-  final String pondLocation;
-  final bool allowEdit;
-  AttachingNotifier notifier = AttachingNotifier();
-
+class FilepondController extends ChangeNotifier with UploadProgressMixin {
   /// Creates a [FilepondController].
   ///
   /// [baseUrl] is required and should point to your upload endpoint.
-  /// [pondLocation] is the path in the response JSON to the uploaded file info (default: 'filepond').
+  /// [pondLocation] is the '/'-separated path to the pond id inside a JSON
+  /// object response (default: 'filepond'). A plain string response is used
+  /// as the pond id directly; an empty [pondLocation] stores the whole JSON
+  /// response, encoded as a string.
   FilepondController({
     required this.baseUrl,
     this.pondLocation = 'filepond',
@@ -44,301 +41,401 @@ class FilepondController with UploadProgressMixin {
     this.uploadName = 'files',
     this.initialFiles,
     this.onFilesChange,
+    this.allowedExtensions = const ['pdf', 'jpg', 'png', 'jpeg'],
   }) {
-    files = initialFiles?.toList() ?? [];
+    files = (initialFiles ?? const <FilepondFile>[])
+        .map(_normalizeIncoming)
+        .toList();
   }
+
+  /// List of files managed by this controller.
+  ///
+  /// Prefer the controller methods ([addFile], [removeFile], [updateFile]) to
+  /// mutate it, so listeners and [operationsStream] stay in sync.
+  var files = <FilepondFile>[];
+
+  /// The URL to which files will be uploaded.
+  final String baseUrl;
+
+  /// Path in a JSON object response to the uploaded file's pond id.
+  final String pondLocation;
+  final bool allowEdit;
+  AttachingNotifier notifier = AttachingNotifier();
+
   final List<FilepondFile>? initialFiles;
-  // ValueChanged() onFilesChanges;
+
+  /// Called with [files] after every change to the list, including status
+  /// changes (uploading, uploaded, failed) and removals.
   ValueChanged<List<FilepondFile>>? onFilesChange;
 
-  /// Returns true if all files have been uploaded (i.e., have a non-null [filepond] property).
-  bool get allUploaded =>
-      files.isNotEmpty && files.every((f) => f.filepond != null);
-  final _operationsController = StreamController<FilepondOperation>.broadcast();
-
-  /// Stream of file operations (insert, uploaded, etc.) for UI updates.
-  Stream<FilepondOperation> get operationsStream =>
-      _operationsController.stream;
   bool? uploadDirectly;
+
+  /// Multipart field name used for the uploaded file.
   final String uploadName;
-  // void notifyFilesChanged() {
-  //   if (onFilesChanges != null) {
-  //     onFilesChanges!(List.from(files));
-  //   }
-  // }
 
-  /// Returns the index of the given [file] in the [files] list by matching its [id].
-  ///
-  /// Returns -1 if the file is not found.
-  // int index(FilepondFile file) => files.indexWhere((f) => f.id == file.id);
-
-  ///the lenght
+  /// Maximum number of files; `null` means no limit.
   int? maxLength;
   SourceType? sourceType;
+
+  /// Extensions accepted by the [SourceType.files] picker.
+  final List<String> allowedExtensions;
+
+  /// Dio client used for uploads. The controller never mutates it.
   final Dio? dioClient;
 
-  /// Updates the given [file] in the [files] list.
+  final _operationsController = StreamController<FilepondOperation>.broadcast();
+  final Map<String, CancelToken> _cancelTokens = {};
+  late final ValueNotifier<List<FilepondFile>> _filesNotifier = ValueNotifier(
+    List.unmodifiable(files),
+  );
+  Dio? _ownDio;
+  bool _disposed = false;
+
+  // ---------------------------------------------------------------------------
+  // State getters
+  // ---------------------------------------------------------------------------
+
+  /// Stream of file operations (insert, uploading, uploaded, failed, ...).
+  Stream<FilepondOperation> get operationsStream =>
+      _operationsController.stream;
+
+  /// Rebuild-friendly view of [files]; a new unmodifiable list is published on
+  /// every change (including status changes).
+  ValueListenable<List<FilepondFile>> get filesListenable => _filesNotifier;
+
+  /// True if there is at least one file and all files have a pond id.
   ///
-  /// Emits a [FilepondOperation.updated] event on success.
+  /// This is `false` for an empty list. To decide whether a form can be
+  /// submitted, use [isSettled] instead.
+  bool get allUploaded =>
+      files.isNotEmpty && files.every((f) => f.filepond != null);
+
+  /// True when at least one file failed to upload.
+  bool get hasFailed => files.any((f) => f.isFailed);
+
+  /// True while any file is waiting for, or in the middle of, an upload.
+  bool get isUploading => files.any((f) => f.isUploading || f.isPending);
+
+  /// True when every picked file is uploaded (also true when there are no
+  /// files). This is the "can submit" check.
+  bool get isSettled => files.every((f) => f.isUploaded);
+
+  /// Files whose last upload attempt failed.
+  List<FilepondFile> get failedFiles =>
+      files.where((f) => f.isFailed).toList(growable: false);
+
+  /// Whether the controller was disposed.
+  bool get isDisposed => _disposed;
+
+  bool get _isFull => maxLength != null && files.length >= maxLength!;
+
+  Dio get _dio =>
+      dioClient ??
+      (_ownDio ??= (Dio()
+        ..interceptors.add(
+          LogInterceptor(
+            logPrint: (Object? message) =>
+                Logger.warn(message: message.toString()),
+          ),
+        )));
+
+  // ---------------------------------------------------------------------------
+  // Adding / updating / removing
+  // ---------------------------------------------------------------------------
+
+  /// Adds an already-built [file] to the controller.
+  ///
+  /// Emits [FilepondOperation.insert] and calls [onFilesChange]. Returns
+  /// `false` (and adds nothing) when [maxLength] is reached or, with
+  /// [checkDuplicates], when a file with the same name or the same bytes is
+  /// already in the list (a [FilepondOperation.dublicate] is emitted).
+  /// Starts the upload when [uploadDirectly] is true.
+  bool addFile(FilepondFile file, {bool checkDuplicates = true}) {
+    if (_disposed || _isFull) return false;
+
+    if (checkDuplicates) {
+      final existing = _indexOfDuplicate(file);
+      if (existing != -1) {
+        _emit(FilepondOperation.dublicate(file, existing, 'Duplicate file'));
+        return false;
+      }
+    }
+
+    final added = _normalizeIncoming(file);
+    files.add(added);
+    final index = files.length - 1;
+    _emit(FilepondOperation.insert(added, index));
+    _notifyFilesChanged();
+
+    if (uploadDirectly == true) unawaited(uploadFile(added));
+    return true;
+  }
+
+  /// Replaces [oldFile] (matched by id) with [newFile], e.g. after editing an
+  /// image. A replacement without a pond id starts as `pending`.
+  ///
+  /// Emits [FilepondOperation.update] on success.
   void updateFile(FilepondFile oldFile, FilepondFile newFile) {
-    var i = files.indexOf(oldFile);
+    final i = _indexOfId(oldFile.id);
 
     if (i == -1) {
-      _operationsController.add(
+      _emit(
         FilepondOperation.failed(oldFile, i, 'File not found in the list!'),
       );
-
       return;
-    } else {
-      files[i] = newFile;
-      _operationsController.add(FilepondOperation.update(oldFile, newFile));
+    }
+
+    _cancelUpload(oldFile.id, 'File replaced');
+    if (oldFile.id != newFile.id) _clearProgress(files[i]);
+    final replacement = _normalizeIncoming(newFile);
+    files[i] = replacement;
+    _emit(FilepondOperation.update(oldFile, replacement));
+    _notifyFilesChanged();
+  }
+
+  /// Removes [file] (matched by id), cancelling its upload if one is in
+  /// flight. A cancelled upload emits neither `uploaded` nor `failed`.
+  ///
+  /// Emits [FilepondOperation.remove] and calls [onFilesChange].
+  void removeFile(FilepondFile file) {
+    final index = _indexOfId(file.id);
+    if (index == -1) {
+      _emit(FilepondOperation.failed(file, index, 'File not found in the list!'));
+      return;
+    }
+
+    final removed = files.removeAt(index);
+    _cancelUpload(removed.id, 'File removed');
+    _clearProgress(removed);
+    _emit(FilepondOperation.remove(removed, index));
+    _notifyFilesChanged();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Picking
+  // ---------------------------------------------------------------------------
+
+  /// Prompts the user to pick a file from [sourceType] and adds it to [files].
+  ///
+  /// Emits [FilepondOperation.insert] on success. Does nothing when the user
+  /// cancels the picker or [maxLength] is reached.
+  Future<void> attachFile() async {
+    if (_disposed || _isFull) return;
+
+    try {
+      switch (sourceType) {
+        case SourceType.files:
+          await _attachFromFilePicker();
+        case SourceType.gallery:
+          await _attachFromImagePicker(ImageSource.gallery);
+        case SourceType.camera:
+          await _attachFromImagePicker(ImageSource.camera);
+        case SourceType.ask:
+        case null:
+          Logger.warn(message: 'attachFile: source type $sourceType is not supported');
+      }
+    } catch (e, stackTrace) {
+      Logger(logPrefix: '⚠️ Ponding warning').emmit('attachFile failed: $e', stackTrace);
+    } finally {
+      notifier.attached();
     }
   }
 
+  Future<void> _attachFromFilePicker() async {
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: allowedExtensions,
+    );
+    final path = picked.isEmpty ? null : picked.first.path;
+    if (path == null) return; // user cancelled
+
+    notifier.attaching();
+    final file = File(path);
+    addFile(
+      FilepondFile(
+        id: file.path,
+        file: await file.readAsBytes(),
+        fileName: basename(file.path),
+        uploadName: uploadName,
+      ),
+    );
+  }
+
+  Future<void> _attachFromImagePicker(ImageSource source) async {
+    final picker = ImagePicker();
+    final XFile? picked = source == ImageSource.camera
+        ? await picker.pickImage(
+            source: source,
+            preferredCameraDevice: CameraDevice.rear,
+            imageQuality: 80,
+          )
+        : await picker.pickImage(source: source);
+    if (picked == null) return; // user cancelled
+
+    notifier.attaching();
+    // Camera files always get a unique name, so they skip the duplicate check.
+    await attachFileToController(
+      File(picked.path),
+      checkDuplicates: source != ImageSource.camera,
+    );
+  }
+
+  /// Compresses [originalFile] (JPEG, in an isolate) and adds it via
+  /// [addFile]. Returns the index and file that were added, or
+  /// `(null, null)` when compression failed or the file was rejected.
   Future<(int?, FilepondFile?)> attachFileToController(
-    File originalFile,
-  ) async {
-    var file = await compressImageFileWithIsolate(originalFile, quality: 60);
+    File originalFile, {
+    bool checkDuplicates = true,
+  }) async {
+    final file = await compressImageFileWithIsolate(originalFile, quality: 60);
     if (file == null) {
       Logger.warn(message: 'failed to compress ${originalFile.path}');
       return (null, null);
     }
-    // final compressedFiles = await Future.wait(
-    //   (maxLength == null ? images : images.take(maxLength!)).map(
-    //     (photo) => compressImageFileWithIsolate(File(photo.path)),
-    //   ),
-    // );
-    // Logger.warn(message: 'compressed files ${compressedFiles.length} ');
-    // final file = compressedFiles[i];
-    // final photo = (maxLength == null ? images : images.take(maxLength!))
-    //     .elementAt(i);
-    // if (file == null) {
-    //   Logger.warn(message: 'File compress failed for ${photo.path} ');
-    //   ;
-    // }
-    var filepondFile = FilepondFile(
+
+    final filepondFile = FilepondFile(
       id: file.path,
-      file: file.readAsBytesSync(),
+      file: await file.readAsBytes(),
       uploadName: uploadName,
       fileName: basename(file.path),
     );
-    files.add(filepondFile);
-    final int index = files.indexOf(filepondFile);
-    return (index, filepondFile);
+    if (!addFile(filepondFile, checkDuplicates: checkDuplicates)) {
+      return (null, null);
+    }
+    final index = _indexOfId(filepondFile.id);
+    return (index, files[index]);
   }
 
-  /// Prompts the user to pick a file and adds it to [files].
+  // ---------------------------------------------------------------------------
+  // Uploading
+  // ---------------------------------------------------------------------------
+
+  /// Uploads [file] (matched by id) to [baseUrl].
   ///
-  /// Emits a [FilepondOperation.insert] event on success.
-  Future<void> attachFile() async {
-    // null maxLength = no limit (previously null blocked every pick).
-    if (maxLength != null && files.length >= maxLength!) return;
+  /// Status goes `uploading`, then `uploaded` on any 2xx response, or
+  /// `failed` (with [FilepondFile.error]) on an exception or non-2xx
+  /// response. Every step replaces the file in [files], emits an operation
+  /// and calls [onFilesChange]. If the file is removed while uploading, the
+  /// result is dropped and nothing is emitted. Does nothing if the file is
+  /// already uploading.
+  Future<void> uploadFile(FilepondFile file) async {
+    if (_disposed) return;
 
+    final startIndex = _indexOfId(file.id);
+    if (startIndex == -1) {
+      _emit(
+        FilepondOperation.failed(
+          file,
+          -1,
+          'File not found in the list for upload!',
+        ),
+      );
+      return;
+    }
+    if (files[startIndex].isUploading) return;
+
+    final uploadingFile = files[startIndex].copyWith(
+      status: FilepondFileStatus.uploading,
+      uploading: true,
+      error: null,
+    );
+    files[startIndex] = uploadingFile;
+    _resetProgress(uploadingFile);
+    _emit(FilepondOperation.uploading(uploadingFile, startIndex));
+    _notifyFilesChanged();
+
+    final cancelToken = CancelToken();
+    _cancelTokens[file.id] = cancelToken;
+
+    Response<dynamic>? response;
+    Object? failure;
     try {
-      switch (sourceType) {
-        // case null:
-        //   // TODO: Handle this case.
-        //   throw UnimplementedError();
-        case SourceType.files:
-          var result = await FilePicker.pickFiles(
-            type: FileType.custom,
-            allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg'],
-          );
-          if (result != null) {
-            File file = File(result.single.path!);
-            var filepondFile = FilepondFile(
-              id: file.path,
-              file: file.readAsBytesSync(),
-              fileName: basename(file.path),
-            );
-
-            // Check if the file is already in the list
-            bool alreadyExists = files.isEmpty
-                ? false
-                : files.any((f) => f.fileName == basename(file.path));
-            if (alreadyExists) {
-              final int index = files.indexOf(filepondFile);
-
-              _operationsController.add(
-                FilepondOperation.dublicate(filepondFile, index),
-              );
-              return;
-            }
-
-            files.add(filepondFile);
-            final int index = files.indexOf(filepondFile);
-
-            print(file.path);
-            onFilesChange?.call(files);
-            _operationsController.add(
-              FilepondOperation.insert(filepondFile, index),
-            );
-            if (uploadDirectly == true) {
-              uploadAll();
-            }
-          } else {
-            // User canceled the picker
-          }
-        case SourceType.gallery:
-          final ImagePicker picker = ImagePicker();
-          // Pick an image.
-          final image = await picker.pickImage(source: ImageSource.gallery);
-          if (image == null) return;
-          // var compressedFiles = await compressImageFileWithIsolate(
-          //   File(image.path),
-          // );
-          // Logger.warn(message: 'compressed files ${compressedFiles?.path} ');
-          // var file = await compressImageFileWithIsolate(File(image.path));
-          // // final compressedFiles = await Future.wait(
-          // //   (maxLength == null ? images : images.take(maxLength!)).map(
-          // //     (photo) => compressImageFileWithIsolate(File(photo.path)),
-          // //   ),
-          // // );
-          // // Logger.warn(message: 'compressed files ${compressedFiles.length} ');
-          // final file = compressedFiles[i];
-          // final photo = (maxLength == null ? images : images.take(maxLength!))
-          //     .elementAt(i);
-          // if (file == null) {
-          //   Logger.warn(message: 'File compress failed for ${photo.path} ');
-          //   ;
-          // }
-          // final Directory? downloadsDir = Platform.isAndroid
-          //     ? await getDownloadsDirectory()
-          //     : await getApplicationDocumentsDirectory();
-
-          // var file = await compressAndGetFile(f, downloadsDir!.path);
-          // File file = File(comprassed.path);
-          // var file = await compressImageFileWithIsolate(File(photo.path));
-          // File file = File(comprassed.path);
-          // if (file == null) {
-          //   Logger.warn(message: 'File compress failed for ${photo.path} ');
-          //   return;
-          // }
-
-          // var filepondFile = FilepondFile(
-          //   id: file.path,
-          //   file: file.readAsBytesSync(),
-          //   uploadName: uploadName,
-          //   fileName: basename(file.path),
-          // );
-
-          // files.add(filepondFile);
-          // final int index = files.indexOf(filepondFile);
-          var attached = await attachFileToController(File(image.path)!);
-          Logger.warn(message: 'index of file ${files.indexOf(attached.$2!)}');
-          if (attached.$1 == null || attached.$2 == null) {
-            return;
-          }
-          onFilesChange?.call(files);
-          _operationsController.add(
-            FilepondOperation.insert(attached.$2!, attached.$1!),
-          );
-
-          // for (var i = 0; i < compressedFiles.length; i++) {
-          //   // Logger.warn(message: 'dealing with ${photo?.path}');
-
-          if (uploadDirectly == true) {
-            uploadAll();
-          }
-        // }
-
-        case SourceType.camera:
-          final ImagePicker picker = ImagePicker();
-
-          final XFile? photo = await picker.pickImage(
-            source: ImageSource.camera,
-            preferredCameraDevice: CameraDevice.rear,
-            imageQuality: 80,
-          );
-
-          notifier.attaching();
-          // var compressedFiles = await compressImageFileWithIsolate(
-          //   File(photo!.path),
-          // );
-          // Logger.warn(message: 'compressed files ${compressedFiles?.path} ');
-          // var file = await compressImageFileWithIsolate(File(image.path));
-          // // final compressedFiles = await Future.wait(
-          // //   (maxLength == null ? images : images.take(maxLength!)).map(
-          // //     (photo) => compressImageFileWithIsolate(File(photo.path)),
-          // //   ),
-          // // );
-          // // Logger.warn(message: 'compressed files ${compressedFiles.length} ');
-          // final file = compressedFiles[i];
-          // final photo = (maxLength == null ? images : images.take(maxLength!))
-          //     .elementAt(i);
-          // if (file == null) {
-          //   Logger.warn(message: 'File compress failed for ${photo.path} ');
-          //   ;
-          // }
-          // final Directory? downloadsDir = Platform.isAndroid
-          //     ? await getDownloadsDirectory()
-          //     : await getApplicationDocumentsDirectory();
-
-          // var file = await compressAndGetFile(f, downloadsDir!.path);
-          // File file = File(comprassed.path);
-          // var file = await compressImageFileWithIsolate(File(photo.path));
-          // File file = File(comprassed.path);
-          // if (file == null) {
-          //   Logger.warn(message: 'File compress failed for ${photo.path} ');
-          //   return;
-          // }
-
-          // var filepondFile = FilepondFile(
-          //   id: file.path,
-          //   file: file.readAsBytesSync(),
-          //   uploadName: uploadName,
-          //   fileName: basename(file.path),
-          // );
-
-          // files.add(filepondFile);
-          // final int index = files.indexOf(filepondFile);
-          var attached = await attachFileToController(File(photo!.path));
-          Logger.warn(message: 'index of file ${files.indexOf(attached.$2!)}');
-          if (attached.$1 == null || attached.$2 == null) {
-            return;
-          }
-          onFilesChange?.call(files);
-          _operationsController.add(
-            FilepondOperation.insert(attached.$2!, attached.$1!),
-          );
-          // if (photo != null) {
-          //   // final Directory? downloadsDir = await getDownloadsDirectory();
-
-          //   // var file = await compressAndGetFile(photo, downloadsDir!.path);
-          //   var file = await compressImageFileWithIsolate(File(photo.path));
-          //   // File file = File(comprassed.path);
-          //   if (file == null) {
-          //     return;
-          //   }
-
-          //   var filepondFile = FilepondFile(
-          //     id: file.path,
-          //     file: file.readAsBytesSync(),
-          //     fileName: basename(file.path),
-          //   );
-
-          //   files.add(filepondFile);
-          //   final int index = files.indexOf(filepondFile);
-
-          //   _operationsController.add(
-          //     FilepondOperation.insert(filepondFile, index),
-          //   );
-          if (uploadDirectly == true) {
-            uploadAll();
-          }
-        // }
-        // case SourceType.ask:
-        //   // TODO: Handle this case.
-        //   throw UnimplementedError();
-        default:
-          return;
-      }
-      Logger.warn(message: 'attached files  ${files.length}');
+      response = await _dio.post<dynamic>(
+        baseUrl,
+        data: _formDataFor(uploadingFile),
+        cancelToken: cancelToken,
+        onSendProgress: (sent, total) {
+          if (total <= 0 || cancelToken.isCancelled) return;
+          _updateProgress(uploadingFile, sent / total);
+        },
+      );
     } catch (e) {
-      print(e);
+      failure = e;
+    } finally {
+      if (identical(_cancelTokens[file.id], cancelToken)) {
+        _cancelTokens.remove(file.id);
+      }
     }
 
-    notifier.attached();
+    // Cancelled (removed, replaced, disposed): it was not a failure.
+    if (_disposed || cancelToken.isCancelled) return;
+
+    // Find the file again: the list may have changed while awaiting.
+    final index = _indexOfId(file.id);
+    if (index == -1) return;
+    final current = files[index];
+
+    String? pondId;
+    String? errorMessage;
+    if (failure != null) {
+      errorMessage = _errorMessageFor(failure);
+    } else if (!_isSuccessStatus(response?.statusCode)) {
+      errorMessage =
+          _serverMessage(response?.data) ??
+          'Upload failed (HTTP ${response?.statusCode})';
+    } else {
+      try {
+        pondId = _extractPondId(response?.data);
+      } catch (e) {
+        errorMessage = e.toString();
+      }
+    }
+
+    if (errorMessage == null) {
+      final uploaded = current.copyWith(
+        status: FilepondFileStatus.uploaded,
+        uploading: false,
+        filepond: pondId,
+        error: null,
+      );
+      files[index] = uploaded;
+      _updateProgress(uploaded, 1.0);
+      _emit(FilepondOperation.uploaded(uploaded, index));
+    } else {
+      final failed = current.copyWith(
+        status: FilepondFileStatus.failed,
+        uploading: false,
+        error: errorMessage,
+      );
+      files[index] = failed;
+      _emit(FilepondOperation.failed(failed, index, errorMessage));
+    }
+    _notifyFilesChanged();
+  }
+
+  /// Uploads every file whose status is `pending` or `failed`, in parallel.
+  /// Files that are already uploading or uploaded are left alone.
+  Future<void> uploadAll() async {
+    final toUpload = files
+        .where((f) => f.status.isUploadable)
+        .toList(growable: false);
+    if (toUpload.isEmpty) return;
+    await Future.wait(toUpload.map(uploadFile));
+  }
+
+  /// Retries the upload of [file] (matched by id). Only failed files are
+  /// retried; anything else is ignored.
+  Future<void> retryUpload(FilepondFile file) async {
+    final index = _indexOfId(file.id);
+    if (index == -1 || !files[index].isFailed) return;
+    await uploadFile(files[index]);
+  }
+
+  /// Retries every failed file, in parallel.
+  Future<void> retryAllFailed() async {
+    final failed = failedFiles;
+    if (failed.isEmpty) return;
+    await Future.wait(failed.map(uploadFile));
   }
 
   /// Resolves a nested value from [data] using a '/'-separated [path].
@@ -349,204 +446,196 @@ class FilepondController with UploadProgressMixin {
     dynamic current = data;
 
     for (final key in keys) {
-      if (current is Map<String, dynamic> && current.containsKey(key)) {
+      if (current is Map && current.containsKey(key)) {
         current = current[key];
       } else {
-        throw Exception('Invalid path: $path');
+        throw FormatException('Invalid path: $path');
       }
     }
 
     return current;
   }
 
-  /// Uploads the given [file] to [baseUrl].
-  ///
-  /// Emits a [FilepondOperation.uploaded] event on success.
-  /// Updates upload progress via [updateUploadProgress].
-  Future<void> uploadFile(FilepondFile file) async {
-    // await Future.delayed(Duration(seconds: 2)); // Add 2 seconds delay
-    Logger.warn(message: 'trying to upload');
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
 
-    Dio dio = dioClient ?? Dio()
-      ..interceptors.addAll([
-        LogInterceptor(
-          logPrint: (Object? message) {
-            Logger.warn(message: message.toString());
-          },
-        ),
-      ]);
-
-    final int index = files.indexOf(file);
-    // Handle case where file might not be found (though unlikely if called from within the controller's managed files)
-    if (index == -1) {
-      _operationsController.add(
-        FilepondOperation.failed(
-          file,
-          -1,
-          'File not found in the list for upload update!',
-        ),
-      );
-      return;
+  /// Cancels in-flight uploads and closes all streams. A cancelled upload
+  /// emits nothing. The controller must not be used afterwards.
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    for (final token in _cancelTokens.values) {
+      token.cancel('Controller disposed');
     }
+    _cancelTokens.clear();
+    disposeUploadProgress();
+    _operationsController.close();
+    _filesNotifier.dispose();
+    _ownDio?.close();
+    super.dispose();
+  }
 
-    try {
-      var res = await dio.post(
-        baseUrl,
-        data: FormData.fromMap(
-          {
-            uploadName: MultipartFile.fromBytes(
-              file.file.toList(),
-              filename: file.fileName,
-            ),
-          },
-          ListFormat.multi,
-          false,
-          file.fileName!,
-        ),
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
-        onSendProgress: (sent, total) {
-          if (total > 0) {
-            final progress = sent / total;
-            updateUploadProgress(file.id, progress);
-            if (file.fileName != null && file.fileName != file.id) {
-              updateUploadProgress(file.fileName!, progress);
-            }
-          }
-        },
+  int _indexOfId(String id) => files.indexWhere((f) => f.id == id);
+
+  int _indexOfDuplicate(FilepondFile file) => files.indexWhere(
+    (f) =>
+        (file.fileName != null && f.fileName == file.fileName) ||
+        (f.file.lengthInBytes == file.file.lengthInBytes &&
+            listEquals(f.file, file.file)),
+  );
+
+  /// Files that come in from outside (initial files, [addFile],
+  /// [updateFile]) can't be mid-upload, and a file with a pond id is
+  /// uploaded even when its status was never set (legacy callers).
+  FilepondFile _normalizeIncoming(FilepondFile file) {
+    if (file.filepond != null && !file.isUploaded) {
+      return file.copyWith(
+        status: FilepondFileStatus.uploaded,
+        uploading: false,
+        error: null,
       );
-      if (res.statusCode == 200) {
-        final pondResult;
+    }
+    if (file.filepond == null && (file.isUploading || file.isUploaded)) {
+      return file.copyWith(status: FilepondFileStatus.pending, uploading: false);
+    }
+    return file;
+  }
 
-        try {
-          // pondResult = resolveNestedValueOrThrow(res.data, pondLocation);
-          // files = files
-          //     .map((e) => e.id == file.id ? e.copyWith(filepond: res.data) : e)
-          //     .toList();
-          final updatedFile = file.copyWith(
-            filepond: res.data,
-            uploading: false,
-          );
-          files[index] = updatedFile;
+  void _emit(FilepondOperation operation) {
+    if (!_operationsController.isClosed) _operationsController.add(operation);
+  }
 
-          _operationsController.add(
-            FilepondOperation.uploaded(
-              // file.copyWith(filepond: res.data, uploading: false),
-              updatedFile,
-              index,
-            ),
-          );
-          onFilesChange?.call(files);
-        } catch (e) {
-          _operationsController.add(
-            FilepondOperation.failed(
-              file.copyWith(uploading: false),
-              index,
-              e.toString(),
-            ),
-          );
-          return;
+  void _notifyFilesChanged() {
+    if (_disposed) return;
+    onFilesChange?.call(files);
+    _filesNotifier.value = List.unmodifiable(files);
+    notifyListeners();
+  }
+
+  void _cancelUpload(String id, String reason) {
+    _cancelTokens.remove(id)?.cancel(reason);
+  }
+
+  // Progress is published under the id and, for backward compatibility,
+  // under the file name as well.
+  void _updateProgress(FilepondFile file, double progress) {
+    updateUploadProgress(file.id, progress);
+    final name = file.fileName;
+    if (name != null && name != file.id) updateUploadProgress(name, progress);
+  }
+
+  void _resetProgress(FilepondFile file) => _updateProgress(file, 0);
+
+  void _clearProgress(FilepondFile file) {
+    clearUploadProgress(file.id);
+    final name = file.fileName;
+    if (name != null && name != file.id) clearUploadProgress(name);
+  }
+
+  FormData _formDataFor(FilepondFile file) => FormData.fromMap({
+    uploadName: MultipartFile.fromBytes(file.file, filename: file.fileName),
+  }, ListFormat.multi);
+
+  static bool _isSuccessStatus(int? code) =>
+      code != null && code >= 200 && code < 300;
+
+  String _extractPondId(dynamic data) {
+    if (data is String) return data;
+    if (data == null) {
+      throw const FormatException('Server returned an empty response');
+    }
+    if (data is Map<String, dynamic> && pondLocation.isNotEmpty) {
+      final value = resolveNestedValueOrThrow(data, pondLocation);
+      if (value == null) {
+        throw FormatException('No pond id at "$pondLocation"');
+      }
+      return value is String ? value : jsonEncode(value);
+    }
+    return jsonEncode(data);
+  }
+
+  String _errorMessageFor(Object error) {
+    if (error is DioException) {
+      return _serverMessage(error.response?.data) ??
+          (error.response?.statusCode != null
+              ? 'Upload failed (HTTP ${error.response!.statusCode})'
+              : error.message ?? error.toString());
+    }
+    return error.toString();
+  }
+
+  /// Best-effort human-readable message from an error response body.
+  static String? _serverMessage(dynamic data) {
+    if (data is Map) {
+      for (final key in const ['message', 'error', 'detail', 'msg']) {
+        final value = data[key];
+        if (value is String && value.trim().isNotEmpty) return value.trim();
+        if (value is Map) {
+          final nested = _serverMessage(value);
+          if (nested != null) return nested;
         }
       }
-    } catch (e) {
-      _operationsController.add(
-        FilepondOperation.failed(file.copyWith(uploading: false), index),
-      );
+      return null;
     }
-    // onFilesChange?.call(files);
+    if (data is String) {
+      final text = data.trim();
+      if (text.isNotEmpty && text.length <= 300 && !text.startsWith('<')) {
+        return text;
+      }
+    }
+    return null;
   }
 
-  /// Uploads all files that have not been uploaded yet.
-  ///
-  /// Calls [uploadFile] for each file whose [filepond] property is null.
-  /// Waits for all uploads to complete.
-  Future<void> uploadAll() async {
-    Logger.warn(message: 'trying to upload all ');
-    Logger.warn(message: '${files.length}');
-    if (files.isEmpty) return;
-    // final filesToUpload = files.where((f) => f.filepond == null).toList();
-    // for (final file in filesToUpload) {
-    //   await uploadFile(file);
-    // }
-    final filesToUpload = files.where((f) => f.filepond == null).toList();
-    Logger.warn(message: 'filles to upload length ${filesToUpload.length}');
-    Logger.warn(message: 'filles in controller length ${files.length}');
-    await Future.wait(filesToUpload.map(uploadFile));
-  }
-
-  /// Removes the given [file] from the controller.
-  ///
-  /// Emits a [FilepondOperation.removed] event on success.
-  void removeFile(FilepondFile file) {
-    // print(files.e);
-    final int index = files.indexOf(file);
-    print('_controller.removeFile:[index]:$index');
-    if (index != -1) {
-      files.removeAt(index);
-      _operationsController.add(FilepondOperation.remove(file, index));
-    } else {
-      Logger.warn(message: 'removing');
-      _operationsController.add(FilepondOperation.failed(file, index));
-    }
-  }
+  // ---------------------------------------------------------------------------
+  // File helpers (unchanged public API)
+  // ---------------------------------------------------------------------------
 
   Future<File> compressAndGetFile(XFile file, String targetPath) async {
-    var bytes = await file.readAsBytes();
-    var result = await FlutterImageCompress.compressWithList(
+    final bytes = await file.readAsBytes();
+    final result = await FlutterImageCompress.compressWithList(
       bytes,
-      // targetPath,
       quality: 88,
-      // rotate: 180,
-      // format: CompressFormat.jpeg,
     );
-    // final bytes = await result?.readAsBytes();
 
-    // print(
-    //   'The src file size: ${File(file.path).lengthSync()}, '
-    //   'the result bytes length: ${bytes?.length}',
-    // );
-
-    var name = basename(file.path);
-    File ffile = await File('$targetPath/$name').create();
-    ffile.writeAsBytesSync(result);
-    return ffile;
+    final name = basename(file.path);
+    final compressed = await File('$targetPath/$name').create();
+    await compressed.writeAsBytes(result);
+    return compressed;
   }
 
   Future<File> fileFromUint8List(Uint8List data, String filename) async {
-    // Get the temporary directory of the app
     final directory = await getTemporaryDirectory();
-
-    // Create a file path with the given filename
-    final filePath = '${directory.path}/$filename';
-
-    // Create the file and write the data
-    final file = File(filePath);
+    final file = File('${directory.path}/$filename');
     await file.writeAsBytes(data);
-
     return file;
   }
 }
 
-// You could also pass a file path and read/write within the isolate
 Future<String> _compressImageFileInBackground(Map<String, dynamic> args) async {
   final String filePath = args['filePath'];
   final String targetPath = args['targetPath'];
   final int quality = args['quality'];
-  debugPrint('Compressing image in seprate isolate');
-  final File originalFile = File(filePath);
-  final Uint8List originalBytes = await originalFile.readAsBytes();
+  final originalBytes = await File(filePath).readAsBytes();
 
   final image = img.decodeImage(originalBytes);
   if (image == null) {
-    throw Exception("Failed to decode image file in isolate.");
+    throw Exception('Failed to decode image file in isolate.');
   }
 
   final compressedBytes = img.encodeJpg(image, quality: quality);
-  final File compressedFile = File(targetPath);
-  await compressedFile.writeAsBytes(compressedBytes);
+  await File(targetPath).writeAsBytes(compressedBytes);
 
   return targetPath;
 }
 
+/// Re-encodes [originalFile] as JPEG at [quality] in a background isolate.
+/// Returns `null` when the image can't be decoded or written.
 Future<File?> compressImageFileWithIsolate(
   File originalFile, {
   int quality = 80,
@@ -554,27 +643,17 @@ Future<File?> compressImageFileWithIsolate(
   try {
     final targetPath =
         '${(await getTemporaryDirectory()).path}/${DateTime.now().millisecondsSinceEpoch}_compressed.jpg';
-    final Map<String, dynamic> args = {
+    final args = <String, dynamic>{
       'filePath': originalFile.absolute.path,
       'targetPath': targetPath,
       'quality': quality,
     };
-    // final String resultPath = await compute(
-    //   _compressImageFileInBackground,
-    //   args,
-    // );
-    Logger.warn(message: 'compressing ${basename(originalFile.path)}');
-
-    // Use Isolate.run instead of compute
-    final String resultPath = await Isolate.run(
-      () => _compressImageFileInBackground(
-        args,
-      ), // Pass a function that takes no arguments
-      // and captures 'args'
+    final resultPath = await Isolate.run(
+      () => _compressImageFileInBackground(args),
     );
     return File(resultPath);
   } catch (e) {
-    print('Error compressing image file in isolate: $e');
+    Logger.warn(message: 'Error compressing image file in isolate: $e');
     return null;
   }
 }

@@ -1,0 +1,26 @@
+name: filepond CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Analyze + test (package and Upload Lab)
+        run: tool/check.sh
+      - name: Generated code is up to date
+        run: git diff --exit-code -- packages/filepond/lib
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: filepond-coverage
+          path: packages/filepond/coverage/lcov.info
+          if-no-files-found: ignore

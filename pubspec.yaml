@@ -6,3 +6,21 @@ workspace:
   - packages/filepond
 dev_dependencies:
   melos: ^8.1.0
+
+melos:
+  scripts:
+    check:
+      description: Codegen, analyze and test the package and the Upload Lab.
+      run: tool/check.sh
+    test:
+      description: Run the filepond test suite with coverage.
+      run: cd packages/filepond && flutter test --coverage
+    gen:
+      description: Regenerate freezed / json_serializable code.
+      run: cd packages/filepond && dart run build_runner build --delete-conflicting-outputs
+    lab:
+      description: Run the Upload Lab example app.
+      run: cd apps/example && flutter run
+    lab:server:
+      description: Start the mock upload server (scenarios, throttling).
+      run: node tool/mock_upload_server.mjs --throttle 256
